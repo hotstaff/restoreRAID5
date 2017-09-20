@@ -28,13 +28,13 @@ my @HDD;
     #
 #STEP2 出力先設定
     # 1)テスト用の出力ファイル
-    my $outdev="./test2.dat";
+    my $outdev="./test.dat";
     # 2)デバイスへ出力
     #$outdev="/dev/sdd";
     #
 #STEP3 出力するセクタ数
     # 1)テストとして先頭 10000 セクタのみ実行
-    my $maxsect = 10000;
+    my $maxsect = 5000;
     # 2)RAID の１本のディスクのセクタ数
     #my $maxsect = 488397168; #WD5000AAKS 500GBの場合（HDDラベルのLBAの表記数を指定）
     #maxsectで指定した数より前にEOFになった場合はコピーを終了します。
@@ -42,7 +42,7 @@ my @HDD;
 #********************************************
 #OPTION（通常はそのまま）
 #開始するセクタ番号
-my $startsect=0;
+my $startsect=5000;
 #ストライプサイズ
 my $stripesize=512; #byte
 #****************設定ここまで*****************
@@ -53,7 +53,6 @@ my $OUT; #OUTPUT DEVICE
 
 my $brk; #壊れたHDDのアレイ番号
 my $cnt=0; #counter of HDD
-
 my $endsect = $startsect + $maxsect - 1; #終了するセクタ番号
 
 #デバイスのOPEN
@@ -96,29 +95,37 @@ print "**************************************\n";
 
 #実行部
 my @data;
-my $endi = $endsect + 1;
-COPY: for(my $i = $startsect ; $i < $endi; $i++){
+my $s = $startsect;
+COPY: while(1){
+    # セクターカウントが上限に達したらループを抜ける
+    if($s > $endsect){
+        print "\nReached max sector count.\n";
+        last COPY;
+    }
+    # セクタ読み込み
     for(my $j = 0 ; $j < 4; $j++){
         if( $j == $brk ){next;}
         my $length = sysread($dev[$j] , $data[$j] , $stripesize);
-        die "Read error: $!, Sector $i" unless defined $length;
+        die "\nRead error: $!, Sector $s\n" unless defined $length;
         if ($length == 0){
-            print "\nReached EOF at Sector $i.\n";
+            print "\nReached EOF at Sector $s.\n";
             last COPY;
         }
     }
         
-    #HDD３台から壊れたHDDの部分（XOR）を計算
+    # HDD３台から壊れたHDDの部分（XOR）を計算
     $data[$brk] = $data[($brk+1)%4]^$data[($brk+2)%4]^$data[($brk+3)%4];
     
     # パリティは出力に含めない
-    my $mod = $i % 4;
+    my $mod = $s % 4;
     my $parity = 3 - $mod;
     $data[$parity] = "";
 
     # 出力
     syswrite $OUT, "$data[0]$data[1]$data[2]$data[3]";
-    print "Sector $i\r";
+    print "Sector $s\r";
+
+    $s++;
 }
 
 print "Finished.              \n";
