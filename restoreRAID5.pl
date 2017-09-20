@@ -21,14 +21,14 @@ my @HDD;
 #*******************設定*********************
 #STEP1 アレイの順番とデバイスを設定
     #復旧に使わないHDDはコメントアウト
-    $HDD[0] = "/dev/sda"; #1番
-    $HDD[1] = "/dev/sda"; #2番
-    $HDD[2] = "/dev/sda"; #3番
+    $HDD[0] = "/dev/sda1"; #1番
+    $HDD[1] = "/dev/sda1"; #2番
+    $HDD[2] = "/dev/sda1"; #3番
     #$HDD[3] = "/dev/sdd"; #4番
     #
 #STEP2 出力先設定
     # 1)テスト用の出力ファイル
-    my $outdev="./test.dat";
+    my $outdev="./test2.dat";
     # 2)デバイスへ出力
     #$outdev="/dev/sdd";
     #
@@ -36,21 +36,27 @@ my @HDD;
     # 1)テストとして先頭 10000 セクタのみ実行
     my $maxsect = 10000;
     # 2)RAID の１本のディスクのセクタ数
-    #$maxsect = 488397167; #WD5000AAKS 500GBの場合（HDDラベルのLBAの表記数引く1を指定）
+    #my $maxsect = 488397168; #WD5000AAKS 500GBの場合（HDDラベルのLBAの表記数を指定）
+    #maxsectで指定した数より前にEOFになった場合はコピーを終了します。
 #
 #********************************************
 #OPTION（通常はそのまま）
-#開始するセクタ数
+#開始するセクタ番号
 my $startsect=0;
 #ストライプサイズ
 my $stripesize=512; #byte
 #****************設定ここまで*****************
 
+#DEVICE
+my @dev; #READ DEVICES
+my $OUT; #OUTPUT DEVICE
+
+my $brk; #壊れたHDDのアレイ番号
+my $cnt=0; #counter of HDD
+
+my $endsect = $startsect + $maxsect - 1; #終了するセクタ番号
 
 #デバイスのOPEN
-my @dev;
-my $brk; #壊れたHDDのアレイ番号
-my $cnt=0;
 print "***************Source*****************\n";
 for(my $k = 0; $k < 4 ; $k++){
     if(defined $HDD[$k]){
@@ -63,7 +69,6 @@ for(my $k = 0; $k < 4 ; $k++){
     }
 }
 print "***************Output*****************\n";
-my $OUT;
 if($cnt < 3){die "The number of HDD < 3. Exit.\n";}
 if($startsect!=0){
     print "[option]Start sector: $startsect\n";
@@ -78,6 +83,7 @@ if($startsect!=0){
     print "Output: $outdev (Full copy: delete and copy)\n";
 }
 print "Max sector count: $maxsect\n";
+print "Copy sector: $startsect to $endsect\n";
 print "**************************************\n";
 
 
@@ -90,12 +96,16 @@ print "**************************************\n";
 
 #実行部
 my @data;
-for(my $i = $startsect ; $i < $maxsect ; $i++){
+my $endi = $endsect + 1;
+COPY: for(my $i = $startsect ; $i < $endi; $i++){
     for(my $j = 0 ; $j < 4; $j++){
         if( $j == $brk ){next;}
         my $length = sysread($dev[$j] , $data[$j] , $stripesize);
         die "Read error: $!, Sector $i" unless defined $length;
-        last if $length == 0;
+        if ($length == 0){
+            print "\nReached EOF at Sector $i.\n";
+            last COPY;
+        }
     }
         
     #HDD３台から壊れたHDDの部分（XOR）を計算
